@@ -61,16 +61,24 @@ public enum AnnotationFactory {
         return annotation
     }
 
-    /// A text note whose box is sized to fit `text`.
-    public static func note(_ text: String, at point: CGPoint, font: NSFont = .systemFont(ofSize: 14)) -> PDFAnnotation {
-        let maxWidth: CGFloat = 240
-        let attributes: [NSAttributedString.Key: Any] = [.font: font]
-        let measured = (text as NSString).boundingRect(
-            with: CGSize(width: maxWidth, height: .greatestFiniteMagnitude),
+    /// The font notes are written in.
+    public static var noteFont: NSFont { .systemFont(ofSize: 14) }
+    /// Notes wrap their text at this width (not counting the padding around it).
+    public static let noteMaxWidth: CGFloat = 240
+
+    /// The size of the box that fits `text`, in page units. Empty text gets the size of a single blank line.
+    public static func noteSize(for text: String, font: NSFont = noteFont) -> CGSize {
+        let measured = ((text.isEmpty ? " " : text) as NSString).boundingRect(
+            with: CGSize(width: noteMaxWidth, height: .greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
-            attributes: attributes
+            attributes: [.font: font]
         )
-        let size = CGSize(width: ceil(measured.width) + 12, height: ceil(measured.height) + 8)
+        return CGSize(width: ceil(measured.width) + 12, height: ceil(measured.height) + 8)
+    }
+
+    /// A text note whose top-left corner is at `point` and whose box is sized to fit `text`.
+    public static func note(_ text: String, at point: CGPoint, font: NSFont = noteFont) -> PDFAnnotation {
+        let size = noteSize(for: text, font: font)
         let bounds = CGRect(origin: CGPoint(x: point.x, y: point.y - size.height), size: size)
 
         let annotation = PDFAnnotation(bounds: bounds, forType: .freeText, withProperties: nil)

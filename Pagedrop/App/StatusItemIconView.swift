@@ -1,22 +1,19 @@
 import AppKit
 import UniformTypeIdentifiers
 
-/// The icon shown in the menu bar. It is also the drop target for PDF files.
+/// The icon shown in the menu bar, drawn as a small rounded "tray" that lights up while a PDF hovers over it.
 ///
-/// ### Why a separate view?
-/// `NSStatusBarButton` can't be subclassed, and its window belongs to the system, so we can't
-/// register it for dragged types directly. Instead this view is added as a subview that fills the
-/// button and registers for `.fileURL` itself. AppKit finds drag destinations by hit-testing the
-/// window's view hierarchy, which is why `hitTest(_:)` must return this view: returning `nil`
-/// (the usual trick for click-through overlays) would make the drop disappear too.
-///
-/// Clicks still reach the button because this view doesn't handle mouse events: the default
-/// `NSResponder` implementation forwards them along the responder chain to the superview, which is
-/// the button, so its normal tracking and action dispatch keep working.
+/// ### Why doesn't this view receive the drag itself?
+/// A view registered for dragged types inside a status item never gets `draggingEntered(_:)`: the drag
+/// is routed to the status bar window, not to its subviews. `StatusBarController` therefore registers
+/// the button's window and acts as its delegate (an `NSWindow` forwards dragging-destination calls to
+/// its delegate), then hands each step to this view through `dragEntered(_:)`, `dragExited()` and
+/// `performDrop(_:)`.
 ///
 /// ### Why does it draw the icon?
 /// SF Symbol effects (`addSymbolEffect`) are only available on `NSImageView`, not on `NSButton`.
-/// The button therefore has no image of its own and this view draws the symbol instead.
+/// The button therefore has no image of its own and this view draws the symbol instead. It ignores
+/// mouse events (`hitTest(_:)` returns `nil`) so clicks go straight to the button.
 @MainActor
 final class StatusItemIconView: NSView {
     enum State {
@@ -32,20 +29,22 @@ final class StatusItemIconView: NSView {
     }
 
     private let imageView = NSImageView()
-    private var isDragging = false
+    private var isDragging = false {
+        didSet { needsDisplay = true }
+    }
     private var restoreTask: Task<Void, Never>?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
+        wantsLayer = true
 
-        imageView.symbolConfiguration = .init(pointSize: 14, weight: .regular)
+        imageView.symbolConfiguration = .init(pointSize: 13, weight: .medium)
         imageView.imageScaling = .scaleNone
         imageView.frame = bounds
         imageView.autoresizingMask = [.width, .height]
         imageView.wantsLayer = true
         addSubview(imageView)
 
-        registerForDraggedTypes([.fileURL])
         showRestingSymbol(animated: false)
     }
 
@@ -54,37 +53,58 @@ final class StatusItemIconView: NSView {
         fatalError("init(coder:) is not supported")
     }
 
-    // MARK: Hit testing
+    // MARK: Drawing
 
-    /// The image view must not steal hits: this view has to be the deepest hit view so it is found as the drag destination.
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        bounds.contains(convert(point, from: superview)) ? self : nil
+    override var wantsUpdateLayer: Bool { true }
+
+    /// Draws the tray. Colors are resolved here so they follow the menu bar's light or dark appearance.
+    override func updateLayer() {
+        guard let layer else { return }
+        let tint: NSColor = isDragging ? .controlAccentColor : .labelColor
+        layer.cornerRadius = 5
+        layer.borderWidth = 1
+        layer.borderColor = tint.withAlphaComponent(isDragging ? 0.9 : 0.35).cgColor
+        layer.backgroundColor = tint.withAlphaComponent(isDragging ? 0.25 : 0.08).cgColor
     }
 
-    // MARK: Drag destination
+    override func layout() {
+        super.layout()
+        // Leave a little room above and below so the tray sits inside the menu bar like other items.
+        imageView.frame = bounds
+    }
 
-    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+    // MARK: Hit testing
+
+    /// Clicks pass through to the status bar button underneath.
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    // MARK: Drag steps (forwarded by StatusBarController)
+
+    func dragEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
         guard Self.pdfURL(in: sender.draggingPasteboard) != nil else {
             reject()
             return []
         }
-        isDragging = true
-        restoreTask?.cancel()
-        setSymbol("doc.badge.plus", animated: true)
-        imageView.addSymbolEffect(.bounce)
+        if !isDragging {
+            isDragging = true
+            restoreTask?.cancel()
+            setSymbol("doc.badge.plus", animated: true)
+            imageView.addSymbolEffect(.bounce)
+        }
         return .copy
     }
 
-    override func draggingExited(_ sender: (any NSDraggingInfo)?) {
+    func dragExited() {
+        guard isDragging else { return }
         isDragging = false
         showRestingSymbol()
     }
 
-    override func prepareForDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+    func canAcceptDrop(_ sender: any NSDraggingInfo) -> Bool {
         Self.pdfURL(in: sender.draggingPasteboard) != nil
     }
 
-    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+    func performDrop(_ sender: any NSDraggingInfo) -> Bool {
         isDragging = false
         guard let url = Self.pdfURL(in: sender.draggingPasteboard), onDrop?(url) == true else {
             reject()

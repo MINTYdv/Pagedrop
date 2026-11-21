@@ -1,12 +1,17 @@
-# Pagedrop
+<h1 align="center">Pagedrop</h1>
 
-A tiny menu bar app to export, trim, reorder and annotate PDFs.
+<p align="center">
+  A tiny macOS menu bar app to export, trim, reorder and annotate PDFs.<br>
+  Drop a PDF on the icon, pick what you want to do, and get on with your day.
+</p>
 
-Drag a PDF onto the icon in the menu bar, pick what you want to do, and get on with your day.
+<p align="center">
+  <img src="docs/demo.gif" alt="Pagedrop demo: highlighting, drawing and adding a note on a PDF" width="720">
+</p>
 
-## Screenshots
+## About this project
 
-_Screenshots coming soon._
+Pagedrop is a personal learning project. I built it to get comfortable with Swift, SwiftUI and AppKit, PDFKit, and macOS app development in general (menu bar apps, drag and drop, sandboxing, signing and releases). It is small on purpose and not meant to compete with full PDF editors, but it works and I use it.
 
 ## Features
 
@@ -16,6 +21,12 @@ _Screenshots coming soon._
 - **Reorder pages.** Drag thumbnails into a new order.
 - **Annotate.** Highlight text, draw with a pen and add text notes in a dedicated window, with undo.
 - **Menu bar only.** No Dock icon. Right-click the icon for Launch at Login and Quit.
+
+## Screenshot
+
+<p align="center">
+  <img src="docs/screenshot.png" alt="The annotation window with a highlight, a circle and a note" width="720">
+</p>
 
 ## Requirements
 

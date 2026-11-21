@@ -35,6 +35,28 @@ struct AnnotationTests {
         #expect(note.bounds.maxY <= 80)
     }
 
+    @Test("Note boxes grow with their text and stop widening at the maximum width")
+    func noteSizing() {
+        let short = AnnotationFactory.noteSize(for: "Hi")
+        let long = AnnotationFactory.noteSize(for: String(repeating: "word ", count: 80))
+        let empty = AnnotationFactory.noteSize(for: "")
+
+        #expect(empty.height > 0)
+        #expect(short.width > empty.width)
+        #expect(long.height > short.height)
+        #expect(long.width <= AnnotationFactory.noteMaxWidth + 12)
+    }
+
+    @Test("A note's box matches its measured size and hangs below the click point")
+    func noteMatchesMeasuredSize() {
+        let note = AnnotationFactory.note("Hello", at: CGPoint(x: 30, y: 70))
+        let size = AnnotationFactory.noteSize(for: "Hello")
+
+        #expect(note.bounds.size == size)
+        #expect(note.bounds.minX == 30)
+        #expect(note.bounds.maxY == 70)
+    }
+
     @Test("Annotations survive saving")
     func annotationsArePersisted() throws {
         let document = TestPDF.make(pageCount: 1)

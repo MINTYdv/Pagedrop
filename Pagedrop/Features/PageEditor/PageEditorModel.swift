@@ -38,9 +38,10 @@ final class PageEditorModel {
     let mode: PageEditorMode
     private let session: DocumentSession
     /// The document as it was when the editor opened. Thumbnails always come from it.
-    let source: PDFDocument?
+    private(set) var source: PDFDocument?
     /// Namespaces this editor's cached thumbnails so they can never be mistaken for another document's.
-    let thumbnailKey = UUID().uuidString
+    private(set) var thumbnailKey = UUID().uuidString
+    let saveFeedback = SaveFeedback()
 
     /// Original indexes of the pages that remain, in their current order.
     private(set) var order: [Int]
@@ -89,6 +90,14 @@ final class PageEditorModel {
     func moveToEnd(_ index: Int) {
         guard let from = order.firstIndex(of: index) else { return }
         order = PageOrder.moving(order, fromOffsets: IndexSet(integer: from), toOffset: order.count)
+    }
+
+    /// Makes the saved document the new starting point, so there is nothing left to save or undo.
+    func didSave(_ saved: PDFDocument) {
+        source = saved
+        thumbnailKey = UUID().uuidString
+        order = Array(0..<saved.pageCount)
+        selection.removeAll()
     }
 
     /// A new document with the edits applied. Nothing is written or replaced yet.

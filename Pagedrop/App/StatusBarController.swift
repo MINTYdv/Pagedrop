@@ -4,11 +4,20 @@ import SwiftUI
 /// Owns the status item, the popover and the tool windows.
 @MainActor
 final class StatusBarController: NSObject, WindowPresenting {
+    /// Wider than a square item so the icon reads as a drop tray and is easy to hit while dragging.
+    private static let itemWidth: CGFloat = 44
+
     private let model: AppModel
-    private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+    private let statusItem = NSStatusBar.system.statusItem(withLength: StatusBarController.itemWidth)
     private let iconView = StatusItemIconView(frame: .zero)
     private let popover = NSPopover()
     private let windows: WindowCoordinator
+    private let dropPanel = DropPanel()
+
+    /// Where the current PDF drag is hovering. The drop panel stays up while either is true.
+    private var isDragOverIcon = false
+    private var isDragOverPanel = false
+    private var hidePanelTask: Task<Void, Never>?
 
     init(model: AppModel) {
         self.model = model
@@ -18,6 +27,7 @@ final class StatusBarController: NSObject, WindowPresenting {
 
         configureStatusItem()
         configurePopover()
+        configureDropPanel()
         observeDocument()
     }
 
@@ -31,16 +41,32 @@ final class StatusBarController: NSObject, WindowPresenting {
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         button.setAccessibilityLabel("Pagedrop")
 
-        // The icon itself is drawn by `StatusItemIconView`. A blank image of the usual size keeps the button
-        // laid out like a regular status item, so the overlay covers the whole clickable area.
-        let placeholder = NSImage(size: NSSize(width: 18, height: 18))
-        placeholder.isTemplate = true
-        button.image = placeholder
-
-        iconView.frame = button.bounds
+        // The icon itself is drawn by `StatusItemIconView`. A blank image gives the button its usual height.
+        button.image = NSImage(size: NSSize(width: Self.itemWidth - 4, height: 18))
+        iconView.frame = button.bounds.insetBy(dx: 2, dy: 0)
         iconView.autoresizingMask = [.width, .height]
         iconView.onDrop = { [weak self] url in self?.model.open(url) ?? false }
         button.addSubview(iconView)
+
+        // Drags over a status item are delivered to its window, which forwards them to its delegate.
+        button.window?.registerForDraggedTypes([.fileURL])
+        button.window?.delegate = self
+    }
+
+    private func configureDropPanel() {
+        dropPanel.onDragEntered = { [weak self] sender in
+            guard let self else { return [] }
+            isDragOverPanel = true
+            hidePanelTask?.cancel()
+            return iconView.dragEntered(sender)
+        }
+        dropPanel.onDragExited = { [weak self] in
+            self?.isDragOverPanel = false
+            self?.hideDropPanelIfIdle()
+        }
+        dropPanel.onDrop = { [weak self] sender in
+            self?.finishDrop(sender) ?? false
+        }
     }
 
     private func configurePopover() {
@@ -132,5 +158,59 @@ final class StatusBarController: NSObject, WindowPresenting {
 
     func closeToolWindows() {
         windows.closeAll()
+    }
+}
+
+// MARK: - Drop target
+
+/// The status bar window forwards dragging-destination calls to its delegate (the window was registered
+/// for file URLs in `configureStatusItem()`). The icon gives feedback and a larger panel opens below it.
+extension StatusBarController: NSWindowDelegate, NSDraggingDestination {
+    func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        let operation = iconView.dragEntered(sender)
+        guard !operation.isEmpty else { return [] }
+        isDragOverIcon = true
+        hidePanelTask?.cancel()
+        if let anchor = statusItem.button?.window?.frame {
+            dropPanel.show(below: anchor)
+        }
+        return operation
+    }
+
+    func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
+        isDragOverIcon ? .copy : []
+    }
+
+    func draggingExited(_ sender: (any NSDraggingInfo)?) {
+        isDragOverIcon = false
+        hideDropPanelIfIdle()
+    }
+
+    func prepareForDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        iconView.canAcceptDrop(sender)
+    }
+
+    func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
+        finishDrop(sender)
+    }
+
+    private func finishDrop(_ sender: any NSDraggingInfo) -> Bool {
+        isDragOverIcon = false
+        isDragOverPanel = false
+        hidePanelTask?.cancel()
+        dropPanel.hide()
+        return iconView.performDrop(sender)
+    }
+
+    /// Hides the panel shortly after the drag leaves both targets. The delay lets the cursor travel
+    /// from the icon down to the panel without it disappearing on the way.
+    private func hideDropPanelIfIdle() {
+        hidePanelTask?.cancel()
+        hidePanelTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(450))
+            guard let self, !Task.isCancelled, !isDragOverIcon, !isDragOverPanel else { return }
+            dropPanel.hide()
+            iconView.dragExited()
+        }
     }
 }

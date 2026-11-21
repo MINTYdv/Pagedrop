@@ -5,11 +5,9 @@ import SwiftUI
 struct PageEditorView: View {
     @Environment(AppModel.self) private var appModel
     @State var model: PageEditorModel
-    let onFinish: () -> Void
 
-    init(model: PageEditorModel, onFinish: @escaping () -> Void) {
+    init(model: PageEditorModel) {
         _model = State(initialValue: model)
-        self.onFinish = onFinish
     }
 
     private let columns = [GridItem(.adaptive(minimum: 130, maximum: 170), spacing: 20)]
@@ -42,33 +40,34 @@ struct PageEditorView: View {
         }
 
         ToolbarItem(placement: .primaryAction) {
-            Menu {
-                Button("Save As…") { save(asCopy: true) }
-            } label: {
-                Text("Save")
-            } primaryAction: {
-                save(asCopy: false)
-            }
-            .disabled(!model.hasChanges)
+            SaveButton(
+                feedback: model.saveFeedback,
+                hasChanges: model.hasChanges,
+                save: { await model.saveFeedback.perform { save(asCopy: false) } },
+                saveAs: { await model.saveFeedback.perform { save(asCopy: true) } }
+            )
         }
     }
 
-    private func save(asCopy: Bool) {
+    /// Returns whether the document was saved; failures are reported to the user.
+    private func save(asCopy: Bool) -> Bool {
         do {
             let edited = try model.editedDocument()
             if asCopy {
-                guard try appModel.saveDocumentAs(edited) else { return }
+                guard try appModel.saveDocumentAs(edited) else { return false }
             } else {
                 do {
                     try appModel.session.save(edited)
                 } catch {
                     // The original may not be writable (read-only location, no sandbox access): offer a copy instead.
-                    guard try appModel.saveDocumentAs(edited) else { return }
+                    guard try appModel.saveDocumentAs(edited) else { return false }
                 }
             }
-            onFinish()
+            model.didSave(edited)
+            return true
         } catch {
             ErrorAlert.show(error, title: "Can't save")
+            return false
         }
     }
 }

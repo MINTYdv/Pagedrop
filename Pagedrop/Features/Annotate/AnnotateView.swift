@@ -11,7 +11,6 @@ struct AnnotateView: View {
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .navigation) {
-            toolButton("Select text", systemImage: "character.cursor.ibeam", tool: .select)
             toolButton("Draw", systemImage: "pencil.tip", tool: .pen)
             toolButton("Add a note", systemImage: "text.bubble", tool: .note)
 
@@ -25,20 +24,19 @@ struct AnnotateView: View {
         }
 
         ToolbarItem(placement: .primaryAction) {
-            Menu {
-                Button("Save As…") { _ = model.save(asCopy: true) }
-            } label: {
-                Text("Save")
-            } primaryAction: {
-                _ = model.save()
-            }
+            SaveButton(
+                feedback: model.saveFeedback,
+                hasChanges: model.canSave,
+                save: { await model.saveWithFeedback() },
+                saveAs: { await model.saveWithFeedback(asCopy: true) }
+            )
         }
     }
 
     private func toolButton(_ title: String, systemImage: String, tool: AnnotationTool) -> some View {
         Toggle(isOn: Binding(
             get: { model.tool == tool },
-            set: { if $0 { model.tool = tool } }
+            set: { model.tool = $0 ? tool : .select }
         )) {
             Label(title, systemImage: systemImage)
         }

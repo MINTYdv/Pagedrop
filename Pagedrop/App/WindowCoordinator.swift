@@ -18,7 +18,7 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
 
     func showPageEditor(mode: PageEditorMode) {
         let editor = PageEditorModel(session: model.session, mode: mode)
-        let view = PageEditorView(model: editor, onFinish: { [weak self] in self?.pageEditorWindow?.close() })
+        let view = PageEditorView(model: editor)
             .environment(model)
         let window = pageEditorWindow ?? makeWindow(size: NSSize(width: 760, height: 560), minSize: NSSize(width: 480, height: 360))
         install(view, in: window)
